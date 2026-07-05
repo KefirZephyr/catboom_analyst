@@ -1,5 +1,20 @@
-from modules.telegram_parser.result_matcher import match_prediction_results
+import asyncio
+
+from modules.telegram_parser.result_settlement import settle_predictions
 
 
 async def run() -> None:
-    await match_prediction_results()
+    summary = await settle_predictions()
+    print(
+        "Settlement summary: "
+        f"checked={summary.checked}, "
+        f"wins={summary.wins}, "
+        f"losses={summary.losses}, "
+        f"voids={summary.voids}, "
+        f"skipped={summary.skipped}, "
+        f"errors={summary.errors}"
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
