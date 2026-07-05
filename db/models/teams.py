@@ -13,5 +13,8 @@ class Team(Base):
     external_id: Mapped[str | None] = mapped_column(String(128), unique=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     slug: Mapped[str | None] = mapped_column(String(255))
+    acronym: Mapped[str | None] = mapped_column(String(64))
+    image_url: Mapped[str | None] = mapped_column(String(500))
     rating: Mapped[float] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

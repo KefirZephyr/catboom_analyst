@@ -6,7 +6,7 @@ try:
 except ModuleNotFoundError:
     load_dotenv = None
 
-if load_dotenv:
+if load_dotenv and os.getenv("CATBOOM_SKIP_DOTENV") != "1":
     load_dotenv()
 
 
@@ -72,6 +72,9 @@ class Settings:
     pandascore_token: SecretValue = field(
         default_factory=lambda: SecretValue(_env("PANDASCORE_TOKEN"))
     )
+    pandascore_base_url: str = field(
+        default_factory=lambda: _env("PANDASCORE_BASE_URL", "https://api.pandascore.co")
+    )
 
     database_url: str = field(default_factory=_database_url)
 
@@ -106,6 +109,9 @@ class Settings:
     default_history_days: int = field(default_factory=lambda: _env_int("DEFAULT_HISTORY_DAYS", 30))
     telegram_history_message_limit: int = field(
         default_factory=lambda: _env_int("TELEGRAM_HISTORY_MESSAGE_LIMIT", 500)
+    )
+    match_sync_interval_minutes: int = field(
+        default_factory=lambda: _env_int("MATCH_SYNC_INTERVAL_MINUTES", 15)
     )
 
     @property
