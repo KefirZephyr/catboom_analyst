@@ -164,6 +164,7 @@ async def scan_channel_with_client(client, channel: TelegramChannel) -> ScanResu
 
 
 async def save_prediction(channel_id: int, source_message_id: int, message_date, extracted) -> bool:
+    prediction_id: int | None = None
     async with async_session() as session:
         exists = await session.execute(
             select(TelegramPrediction.id).where(
@@ -189,10 +190,17 @@ async def save_prediction(channel_id: int, source_message_id: int, message_date,
         session.add(prediction)
 
         try:
+            await session.flush()
+            prediction_id = prediction.id
             await session.commit()
         except IntegrityError:
             await session.rollback()
             return False
+
+    if prediction_id:
+        from modules.telegram_parser.result_matcher import auto_match_prediction
+
+        await auto_match_prediction(prediction_id)
 
         return True
 

@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from db.models import DotaMatch, Team, Tournament
+from db.models import DotaMatch, Team, TeamAlias, Tournament
 from db.session import async_session
 from modules.dota_data.providers.pandascore import (
     PandaScoreError,
@@ -94,7 +94,27 @@ async def upsert_team(session, team_data: dict[str, Any] | None, counters: dict[
     team.acronym = team_data.get("acronym") or team.acronym
     team.image_url = team_data.get("image_url") or team.image_url
     team.updated_at = datetime.utcnow()
+    await upsert_team_aliases(session, team, [team.name, team.slug, team.acronym])
     return team
+
+
+async def upsert_team_aliases(session, team: Team, aliases: list[str | None]) -> None:
+    await session.flush()
+    for alias in aliases:
+        if not alias:
+            continue
+        normalized_alias = alias.strip()
+        if not normalized_alias:
+            continue
+
+        result = await session.execute(
+            select(TeamAlias).where(
+                TeamAlias.team_id == team.id,
+                TeamAlias.alias == normalized_alias,
+            )
+        )
+        if not result.scalar_one_or_none():
+            session.add(TeamAlias(team_id=team.id, alias=normalized_alias))
 
 
 async def upsert_tournament(
