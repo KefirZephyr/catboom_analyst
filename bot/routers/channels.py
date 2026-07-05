@@ -3,10 +3,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from modules.telegram_parser.channel_rating import (
+    ChannelRatingStats,
+    calculate_all_channels_stats,
+    calculate_channel_stats,
+)
 from modules.telegram_parser.channel_sync import (
     add_channel,
     ensure_default_channels,
-    get_channel_stats,
     list_channels,
     scan_all_channels,
     scan_channel,
@@ -26,7 +30,7 @@ def channels_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📋 Список каналов", callback_data="channels_list")],
             [InlineKeyboardButton(text="➕ Добавить канал", callback_data="channels_add")],
             [InlineKeyboardButton(text="🔄 Сканировать все", callback_data="channels_scan_all")],
-            [InlineKeyboardButton(text="📊 Статистика каналов", callback_data="channels_stats")],
+            [InlineKeyboardButton(text="📊 Рейтинг каналов", callback_data="channels_stats")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")],
         ]
     )
@@ -43,7 +47,7 @@ def channel_actions_keyboard(channel_id: int, is_active: bool) -> InlineKeyboard
                     callback_data=f"channels_scan:{channel_id}",
                 )
             ],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="channels_stats")],
+            [InlineKeyboardButton(text="📊 Рейтинг всех каналов", callback_data="channels_stats")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="channels")],
         ]
     )
@@ -51,6 +55,10 @@ def channel_actions_keyboard(channel_id: int, is_active: bool) -> InlineKeyboard
 
 def format_last_sync(value) -> str:
     return value.strftime("%d.%m.%Y %H:%M") if value else "ещё не сканировался"
+
+
+def format_percent(value: float) -> str:
+    return f"{value:.1f}%"
 
 
 async def render_channel_card(callback: CallbackQuery, channel_id: int) -> None:
@@ -61,13 +69,18 @@ async def render_channel_card(callback: CallbackQuery, channel_id: int) -> None:
         await callback.answer("Канал не найден", show_alert=True)
         return
 
+    stats = await calculate_channel_stats(channel_id)
     status = "включён" if channel.is_active else "выключен"
     text = (
         f"📊 <b>{channel.title or '@' + channel.username}</b>\n\n"
         f"Username: @{channel.username}\n"
         f"Статус: {status}\n"
-        f"Последнее сканирование: {format_last_sync(channel.last_sync_at)}"
+        f"Последнее сканирование: {format_last_sync(channel.last_sync_at)}\n\n"
     )
+
+    if stats:
+        text += format_channel_stats_block(stats)
+
     if channel.last_error:
         text += f"\n\nПоследняя ошибка: {channel.last_error[:300]}"
 
@@ -77,11 +90,31 @@ async def render_channel_card(callback: CallbackQuery, channel_id: int) -> None:
     )
 
 
+def format_channel_stats_block(stats: ChannelRatingStats) -> str:
+    best_market = stats.best_market or "нет данных"
+    worst_market = stats.worst_market or "нет данных"
+    return (
+        "<b>Качество канала</b>\n"
+        f"Прогнозов: {stats.total_predictions}\n"
+        f"Рассчитано: {stats.resolved_predictions}\n"
+        f"Winrate: {format_percent(stats.winrate)} ({stats.win_count}W / {stats.loss_count}L)\n"
+        f"ROI flat: {format_percent(stats.roi_flat)}\n"
+        f"Profit flat: {stats.profit_flat:+.2f} unit\n"
+        f"Средний кэф: {stats.avg_odds:.2f}\n"
+        f"Pending: {stats.pending_predictions}\n"
+        f"Needs review: {stats.needs_review_predictions}\n"
+        f"Лучший рынок: {best_market}\n"
+        f"Худший рынок: {worst_market}\n"
+        f"Рейтинг: {stats.rating_score:.1f} / {stats.rating_grade}\n\n"
+        "ROI считается по flat stake 1 unit на каждый рассчитанный прогноз."
+    )
+
+
 @router.callback_query(F.data == "channels")
 async def channels_menu(callback: CallbackQuery) -> None:
     await ensure_default_channels()
     await callback.message.edit_text(
-        "📊 <b>Telegram-каналы</b>\n\nУправление каналами для поиска Dota 2 прогнозов.",
+        "📊 <b>Telegram-каналы</b>\n\nУправление каналами и оценка качества Dota 2 прогнозов.",
         reply_markup=channels_keyboard(),
     )
     await callback.answer()
@@ -212,23 +245,24 @@ async def scan_all_channels_callback(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "channels_stats")
 async def channels_stats(callback: CallbackQuery) -> None:
-    stats = await get_channel_stats()
+    stats = await calculate_all_channels_stats()
     if not stats:
         await callback.message.edit_text("Статистика пока пустая.", reply_markup=channels_keyboard())
         await callback.answer()
         return
 
-    lines = ["📊 <b>Статистика Telegram-каналов</b>\n"]
-    for item in stats:
-        avg_odds = item.average_odds if item.average_odds is not None else "нет"
+    lines = [
+        "📊 <b>Рейтинг Telegram-каналов</b>\n",
+        "ROI считается по flat stake 1 unit на каждый рассчитанный прогноз.\n",
+    ]
+    for index, item in enumerate(stats, 1):
         lines.append(
-            f"<b>@{item.username}</b>\n"
-            f"Всего прогнозов: {item.total_predictions}\n"
-            f"С коэффициентом: {item.with_odds}\n"
-            f"Needs review: {item.needs_review}\n"
-            f"Средний коэффициент: {avg_odds}\n"
-            f"Последнее сканирование: {format_last_sync(item.last_sync_at)}\n"
+            f"{index}. <b>@{item.username}</b> — {item.rating_grade} ({item.rating_score:.1f})\n"
+            f"Прогнозов: {item.total_predictions}, рассчитано: {item.resolved_predictions}\n"
+            f"Winrate: {format_percent(item.winrate)}, ROI: {format_percent(item.roi_flat)}\n"
+            f"Avg кэф: {item.avg_odds:.2f}, pending: {item.pending_predictions}, "
+            f"review: {item.needs_review_predictions}"
         )
 
-    await callback.message.edit_text("\n".join(lines), reply_markup=channels_keyboard())
+    await callback.message.edit_text("\n\n".join(lines), reply_markup=channels_keyboard())
     await callback.answer()
