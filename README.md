@@ -118,3 +118,40 @@ pytest
 - `.env`, базы, session-файлы, логи и виртуальные окружения не должны попадать в git.
 - `AUTO_BETTING_ENABLED=false`.
 - Автоставки, Selenium/Playwright для букмекера и подключение к букмекерскому кабинету не реализуются.
+
+## Запуск на Windows через ярлык
+
+1. Заполните локальный `.env` по шаблону `.env.example`.
+2. Откройте PowerShell из папки проекта обычным пользователем.
+3. Выполните:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\create_desktop_shortcut.ps1
+```
+
+4. На рабочем столе появится ярлык `CatBoom Dota Analyst v2`.
+5. Запускайте бота двойным кликом по ярлыку.
+
+Ярлык запускает `run_bot.bat`. Скрипт работает из папки проекта, проверяет наличие `.env`, создаёт `.venv`, если его ещё нет, устанавливает зависимости из `requirements.txt` и запускает:
+
+```powershell
+python -m app.main
+```
+
+В `.env` вручную нужно заполнить секретные и персональные поля: `BOT_TOKEN`, `API_ID`, `API_HASH`, `PANDASCORE_TOKEN`, `ADMIN_IDS`, `WHITELIST_USER_IDS`. Не публикуйте реальные значения этих переменных и не добавляйте `.env` в git.
+
+## Создание Pull Request одной командой
+
+Для автоматической подготовки ветки, проверок, push и создания PR нужен GitHub CLI `gh` с авторизацией:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\create_pr.ps1
+```
+
+Необязательные параметры:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\create_pr.ps1 -Branch chore/my-branch -Title "My PR title" -CommitMessage "My commit message" -BaseBranch main
+```
+
+Скрипт проверяет `.gitignore`, `.env.example`, отсутствие локальных секретов и баз в git, запускает `compileall`, импорт настроек и `pytest`, затем создаёт или обновляет PR через `gh pr create`. После успешных проверок скрипт сам делает commit, push и создаёт Pull Request. Пользователю остаётся только открыть ссылку и нажать Merge. Merge и force push скрипт не выполняет.

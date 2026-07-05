@@ -36,3 +36,6 @@ logs/
 *.log
 .DS_Store
 Thumbs.db
+
+# Accidental Node/npm metadata is not used by this Python project
+package-lock.json

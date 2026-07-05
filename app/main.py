@@ -17,11 +17,6 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     setup_logging()
 
-    token = settings.bot_token.get_secret_value()
-    if not token:
-        logger.error("BOT_TOKEN is not configured")
-        return
-
     if settings.auto_betting_enabled:
         logger.warning("AUTO_BETTING_ENABLED is ignored in v2 foundation")
 
@@ -34,16 +29,20 @@ async def main() -> None:
         logger.error("Не удалось инициализировать базу данных: %s", exc)
         return
 
+    if os.getenv("CATBOOM_DRY_RUN") == "1":
+        logger.info("CatBoom Dota Analyst v2 dry run completed")
+        return
+
+    token = settings.bot_token.get_secret_value()
+    if not token:
+        logger.error("BOT_TOKEN is not configured")
+        return
+
     bot = Bot(
         token=token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dispatcher = create_dispatcher()
-
-    if os.getenv("CATBOOM_DRY_RUN") == "1":
-        logger.info("CatBoom Dota Analyst v2 dry run completed")
-        await bot.session.close()
-        return
 
     logger.info("CatBoom Dota Analyst v2 started")
     try:
