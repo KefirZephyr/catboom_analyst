@@ -18,6 +18,8 @@ class TelegramPrediction(Base):
     raw_text: Mapped[str] = mapped_column(Text)
     normalized_text: Mapped[str] = mapped_column(Text)
     market_type: Mapped[str | None] = mapped_column(String(64))
+    market_side: Mapped[str | None] = mapped_column(String(16))
+    market_line: Mapped[float | None] = mapped_column(Float)
     picked_team_name: Mapped[str | None] = mapped_column(String(255))
     odds_value: Mapped[float | None] = mapped_column(Float)
     confidence: Mapped[float] = mapped_column(Float, default=0)

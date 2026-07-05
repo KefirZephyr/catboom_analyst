@@ -8,6 +8,7 @@ from db.session import async_session
 
 SETTLED_STATUSES = {"win", "loss", "void"}
 VOID_MATCH_STATUSES = {"canceled", "not_played"}
+SUPPORTED_MARKETS = {"match_winner", "maps_total"}
 
 
 @dataclass(slots=True)
@@ -21,12 +22,13 @@ class SettlementSummary:
 
 
 def is_prediction_eligible(prediction: TelegramPrediction) -> bool:
-    return (
-        prediction.status == "pending"
-        and prediction.match_id is not None
-        and prediction.picked_team_id is not None
-        and prediction.market_type == "match_winner"
-    )
+    if prediction.status != "pending" or prediction.match_id is None:
+        return False
+    if prediction.market_type == "match_winner":
+        return prediction.picked_team_id is not None
+    if prediction.market_type == "maps_total":
+        return prediction.market_side in {"over", "under"} and prediction.market_line is not None
+    return False
 
 
 def settle_prediction_result(prediction: TelegramPrediction, match: DotaMatch | None) -> str | None:
@@ -36,8 +38,27 @@ def settle_prediction_result(prediction: TelegramPrediction, match: DotaMatch | 
     if match.status in VOID_MATCH_STATUSES:
         return "void"
 
-    if match.status == "finished" and match.winner_team_id:
+    if match.status != "finished":
+        return None
+
+    if prediction.market_type == "match_winner" and match.winner_team_id:
         return "win" if prediction.picked_team_id == match.winner_team_id else "loss"
+
+    if prediction.market_type == "maps_total":
+        if (
+            prediction.market_side not in {"over", "under"}
+            or prediction.market_line is None
+            or match.team_a_score is None
+            or match.team_b_score is None
+        ):
+            return None
+
+        total_maps = match.team_a_score + match.team_b_score
+        if total_maps == prediction.market_line:
+            return "void"
+        if prediction.market_side == "over":
+            return "win" if total_maps > prediction.market_line else "loss"
+        return "win" if total_maps < prediction.market_line else "loss"
 
     return None
 
@@ -58,8 +79,7 @@ async def settle_predictions() -> SettlementSummary:
             select(TelegramPrediction).where(
                 TelegramPrediction.status == "pending",
                 TelegramPrediction.match_id.is_not(None),
-                TelegramPrediction.picked_team_id.is_not(None),
-                TelegramPrediction.market_type == "match_winner",
+                TelegramPrediction.market_type.in_(SUPPORTED_MARKETS),
             )
         )
         predictions = result.scalars().all()

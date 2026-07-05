@@ -15,7 +15,29 @@ def test_extracts_maps_total_prediction():
 
     assert prediction is not None
     assert prediction.market_type == "maps_total"
+    assert prediction.market_side == "over"
+    assert prediction.market_line == 2.5
     assert prediction.odds == 1.92
+
+
+def test_extracts_maps_total_over_without_treating_line_as_odds():
+    prediction = extract_prediction("Dota 2 ТБ 2.5 карт")
+
+    assert prediction is not None
+    assert prediction.market_type == "maps_total"
+    assert prediction.market_side == "over"
+    assert prediction.market_line == 2.5
+    assert prediction.odds is None
+
+
+def test_extracts_maps_total_under():
+    prediction = extract_prediction("under 2.5 maps @1.88")
+
+    assert prediction is not None
+    assert prediction.market_type == "maps_total"
+    assert prediction.market_side == "under"
+    assert prediction.market_line == 2.5
+    assert prediction.odds == 1.88
 
 
 def test_ignores_short_noise():

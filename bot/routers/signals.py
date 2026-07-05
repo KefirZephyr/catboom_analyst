@@ -21,6 +21,30 @@ class SignalStates(StatesGroup):
     waiting_for_stake = State()
 
 
+def format_maps_total_label(side: str | None, line: float | None) -> str:
+    if side == "over" and line is not None:
+        return f"ТБ {line:g} карт"
+    if side == "under" and line is not None:
+        return f"ТМ {line:g} карт"
+    return "тотал карт"
+
+
+def format_prediction_market(prediction: TelegramPrediction) -> str:
+    if prediction.market_type == "maps_total":
+        return format_maps_total_label(prediction.market_side, prediction.market_line)
+    if prediction.market_type == "match_winner":
+        return "победа команды"
+    return prediction.market_type or "не определён"
+
+
+def format_signal_market(signal: Signal) -> str:
+    if signal.market_type == "maps_total":
+        return signal.selection if signal.selection else "тотал карт"
+    if signal.market_type == "match_winner":
+        return "победа команды"
+    return signal.market_type
+
+
 def signals_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -215,7 +239,7 @@ async def format_signal_card(signal_id: int) -> str | None:
         else "Матч не указан"
     )
     pick = picked_team.name if picked_team else signal.selection
-    market = "победа команды" if signal.market_type == "match_winner" else "тотал карт"
+    market = format_signal_market(signal)
     risk = {"low": "низкий", "medium": "средний", "high": "высокий"}.get(
         signal.risk_level,
         signal.risk_level,
@@ -305,7 +329,7 @@ async def render_prediction_review(callback: CallbackQuery, prediction: Telegram
     candidates = await find_match_candidates(prediction, limit=4)
     channel_name = f"@{channel.username}" if channel else "канал неизвестен"
     odds = prediction.odds_value if prediction.odds_value is not None else "не найден"
-    market = prediction.market_type or "не определён"
+    market = format_prediction_market(prediction)
     text = (
         "📌 <b>Прогноз на проверку</b>\n\n"
         f"Канал: {channel_name}\n"
