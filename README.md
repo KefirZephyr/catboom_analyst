@@ -154,4 +154,4 @@ powershell -ExecutionPolicy Bypass -File .\create_pr.ps1
 powershell -ExecutionPolicy Bypass -File .\create_pr.ps1 -Branch chore/my-branch -Title "My PR title" -CommitMessage "My commit message" -BaseBranch main
 ```
 
-Скрипт проверяет `.gitignore`, `.env.example`, отсутствие локальных секретов и баз в git, запускает `compileall`, импорт настроек и `pytest`, затем создаёт или обновляет PR через `gh pr create`. Merge и force push скрипт не выполняет.
+Скрипт проверяет `.gitignore`, `.env.example`, отсутствие локальных секретов и баз в git, запускает `compileall`, импорт настроек и `pytest`, затем создаёт или обновляет PR через `gh pr create`. После успешных проверок скрипт сам делает commit, push и создаёт Pull Request. Пользователю остаётся только открыть ссылку и нажать Merge. Merge и force push скрипт не выполняет.

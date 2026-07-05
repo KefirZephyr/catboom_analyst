@@ -43,6 +43,14 @@ function Run($Command, [string[]]$Arguments) {
     }
 }
 
+function Run-GhAuthStatus {
+    Write-Host "+ gh auth status" -ForegroundColor DarkGray
+    & gh auth status
+    if ($LASTEXITCODE -ne 0) {
+        Fail "GitHub CLI is not authenticated. Run 'gh auth login' and start this script again."
+    }
+}
+
 function Require-Command($Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         Fail "$Name is not installed or not available in PATH."
@@ -149,6 +157,24 @@ function Get-AutoTitle([string[]]$Files) {
     return "Update CatBoom Dota Analyst v2"
 }
 
+function Get-ChangedFilesForBody([string]$TargetBaseBranch) {
+    $files = @()
+    $staged = @(Get-GitOutput @("diff", "--cached", "--name-only"))
+    $unstaged = @(Get-GitOutput @("diff", "--name-only"))
+    $untracked = @(Get-GitOutput @("ls-files", "--others", "--exclude-standard"))
+
+    if ($staged.Count -gt 0 -or $unstaged.Count -gt 0 -or $untracked.Count -gt 0) {
+        $files = @($staged + $unstaged + $untracked | Sort-Object -Unique)
+    } else {
+        $mergeBase = (& git merge-base "origin/$TargetBaseBranch" HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $mergeBase) {
+            $files = @(Get-GitOutput @("diff", "--name-only", "$mergeBase..HEAD") | Sort-Object -Unique)
+        }
+    }
+
+    return $files
+}
+
 function New-PrBody([string]$PrTitle, [string]$BranchName, [string[]]$Files) {
     $fileLines = if ($Files.Count -gt 0) {
         ($Files | ForEach-Object { "- $_" }) -join [Environment]::NewLine
@@ -182,7 +208,7 @@ Step "Checking required tools"
 Require-Command "git"
 Require-Command "gh"
 Require-Command "python"
-Run "gh" @("auth", "status")
+Run-GhAuthStatus
 
 Step "Checking git repository"
 Run "git" @("rev-parse", "--is-inside-work-tree")
@@ -212,6 +238,10 @@ if (-not $Branch) {
     $Branch = "chore/auto-pr-$(Get-Date -Format 'yyyyMMdd-HHmm')"
 }
 
+if ($Branch -eq $BaseBranch -or $Branch -eq "main" -or $Branch -eq "master") {
+    Fail "Refusing to commit or push directly to protected/base branch '$Branch'. Choose a feature branch."
+}
+
 Step "Preparing branch $Branch"
 $localBranch = & git branch --list $Branch
 if ($localBranch) {
@@ -228,6 +258,8 @@ if ($stashedChanges) {
 Ensure-Gitignore
 Assert-NoDangerousTrackedFiles
 Assert-EnvExampleIsSafe
+
+$changedFilesForBody = @(Get-ChangedFilesForBody $BaseBranch)
 
 Step "Running checks"
 Run "python" @("-m", "compileall", ".")
@@ -251,22 +283,27 @@ if ($changedFiles.Count -eq 0) {
 
     Step "Creating commit"
     Run "git" @("commit", "-m", $CommitMessage)
+    $changedFilesForBody = @(Get-ChangedFilesForBody $BaseBranch)
 }
 
 $commitHash = (Get-GitOutput @("rev-parse", "HEAD")).Trim()
 if (-not $Title) {
-    $Title = (Get-GitOutput @("log", "-1", "--pretty=%s")).Trim()
+    if ($changedFilesForBody.Count -gt 0) {
+        $Title = Get-AutoTitle $changedFilesForBody
+    } else {
+        $Title = (Get-GitOutput @("log", "-1", "--pretty=%s")).Trim()
+    }
 }
 
 Step "Pushing branch"
 Run "git" @("push", "-u", "origin", $Branch)
 
-$body = New-PrBody $Title $Branch $changedFiles
-$existingPrUrl = (& gh pr view --head $Branch --base $BaseBranch --json url --jq ".url" 2>$null)
+$body = New-PrBody $Title $Branch $changedFilesForBody
+$existingPrUrl = (& gh pr list --base $BaseBranch --head $Branch --state open --json url --jq ".[0].url" 2>$null)
 
 Step "Creating or updating pull request"
 if ($LASTEXITCODE -eq 0 -and $existingPrUrl) {
-    Run "gh" @("pr", "edit", $existingPrUrl, "--title", $Title, "--body", $body)
+    Run "gh" @("pr", "edit", $Branch, "--title", $Title, "--body", $body)
     $prUrl = $existingPrUrl
     Write-Host "Updated existing PR: $prUrl"
 } else {
