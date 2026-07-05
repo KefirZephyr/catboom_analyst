@@ -18,6 +18,15 @@ class SignalGenerationResult:
     reason: str
 
 
+def prediction_selection(prediction: TelegramPrediction) -> str:
+    if prediction.market_type == "maps_total":
+        if prediction.market_side == "over" and prediction.market_line is not None:
+            return f"ТБ {prediction.market_line:g} карт"
+        if prediction.market_side == "under" and prediction.market_line is not None:
+            return f"ТМ {prediction.market_line:g} карт"
+    return prediction.picked_team_name or str(prediction.picked_team_id)
+
+
 async def generate_signal_for_prediction(
     prediction_id: int,
     user_id: int = 0,
@@ -37,7 +46,7 @@ async def generate_signal_for_prediction(
             select(Signal).where(
                 Signal.match_id == prediction.match_id,
                 Signal.market_type == prediction.market_type,
-                Signal.selection == (prediction.picked_team_name or str(prediction.picked_team_id)),
+                Signal.selection == prediction_selection(prediction),
                 Signal.status != "skipped",
             )
         )
@@ -65,7 +74,7 @@ async def generate_signal_for_prediction(
             match_id=prediction.match_id,
             prediction_id=prediction.id,
             market_type=prediction.market_type,
-            selection=prediction.picked_team_name or str(prediction.picked_team_id),
+            selection=prediction_selection(prediction),
             picked_team_id=prediction.picked_team_id,
             odds_value=prediction.odds_value,
             model_probability_percent=probability.model_probability_percent,

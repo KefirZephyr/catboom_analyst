@@ -30,13 +30,27 @@ PREDICTION_KEYWORDS = {
     "win",
     "maps",
     "total",
+    "over",
+    "under",
+    "больше",
+    "меньше",
 }
 
-ODDS_PATTERNS = [
+EXPLICIT_ODDS_PATTERNS = [
     r"(?:кф|коэф|коэффициент)\s*[:\-]?\s*(\d+(?:[.,]\d{1,2})?)",
     r"odds\s*[:\-]?\s*(\d+(?:[.,]\d{1,2})?)",
     r"@(\d+(?:[.,]\d{1,2})?)",
+]
+
+GENERIC_ODDS_PATTERNS = [
     r"\b(\d+[.,]\d{1,2})\b",
+]
+
+MAPS_TOTAL_PATTERNS = [
+    r"\b(?P<side>over|under)\s*(?P<line>\d+(?:[.,]\d+)?)\s*(?:maps?|карт[а-я]*)?",
+    r"\b(?P<side>тб|тм)\s*(?P<line>\d+(?:[.,]\d+)?)\s*(?:карт[а-я]*)?",
+    r"\b(?P<side>больше|меньше)\s*(?P<line>\d+(?:[.,]\d+)?)\s*(?:карт[а-я]*)?",
+    r"\b(?P<side>tb|tm)\s*(?P<line>\d+(?:[.,]\d+)?)\s*(?:maps?)?",
 ]
 
 
@@ -46,27 +60,79 @@ class ExtractedPrediction:
     normalized_text: str
     picked_team_name: str | None
     market_type: str
+    market_side: str | None
+    market_line: float | None
     odds: float | None
     confidence: float
     needs_review: bool
 
 
 def normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip().lower())
+    return re.sub(r"\s+", " ", text.strip().lower()).replace("ё", "е")
 
 
-def extract_decimal_odds(text: str) -> float | None:
+def normalize_market_side(side: str | None) -> str | None:
+    if not side:
+        return None
+
+    normalized = side.lower()
+    if normalized in {"over", "тб", "tb", "больше"}:
+        return "over"
+    if normalized in {"under", "тм", "tm", "меньше"}:
+        return "under"
+    return None
+
+
+def extract_maps_total(text: str) -> tuple[str | None, float | None]:
     normalized = normalize_text(text)
-    for pattern in ODDS_PATTERNS:
+    for pattern in MAPS_TOTAL_PATTERNS:
+        match = re.search(pattern, normalized, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        side = normalize_market_side(match.group("side"))
+        line = float(match.group("line").replace(",", "."))
+        if side and 0.5 <= line <= 10:
+            return side, line
+
+    return None, None
+
+
+def extract_decimal_odds(text: str, excluded_values: set[float] | None = None) -> float | None:
+    normalized = normalize_text(text)
+    excluded_values = excluded_values or set()
+
+    for pattern in EXPLICIT_ODDS_PATTERNS:
         for match in re.findall(pattern, normalized, flags=re.IGNORECASE):
             value = float(match.replace(",", "."))
             if 1.01 <= value <= 20.0:
                 return round(value, 2)
+
+    for pattern in GENERIC_ODDS_PATTERNS:
+        for match in re.findall(pattern, normalized, flags=re.IGNORECASE):
+            value = float(match.replace(",", "."))
+            if any(abs(value - excluded) < 0.001 for excluded in excluded_values):
+                continue
+            if 1.01 <= value <= 20.0:
+                return round(value, 2)
+
     return None
 
 
 def detect_market_type(normalized_text: str) -> str | None:
-    maps_markers = ("тотал карт", "карты", "карт", "maps", "map total", "тб", "тм")
+    maps_markers = (
+        "тотал карт",
+        "карты",
+        "карт",
+        "maps",
+        "map total",
+        "тб",
+        "тм",
+        "over",
+        "under",
+        "больше",
+        "меньше",
+    )
     winner_markers = ("победа", "п1", "п2", "winner", "win", "победит")
 
     if any(marker in normalized_text for marker in maps_markers):
@@ -114,8 +180,11 @@ def extract_prediction(text: str) -> ExtractedPrediction | None:
         return None
 
     normalized = normalize_text(text)
-    market_type = detect_market_type(normalized)
-    odds = extract_decimal_odds(normalized)
+    market_side, market_line = extract_maps_total(normalized)
+    market_type = "maps_total" if market_side and market_line is not None else detect_market_type(normalized)
+
+    excluded_odds = {market_line} if market_line is not None else set()
+    odds = extract_decimal_odds(normalized, excluded_values=excluded_odds)
     confidence = calculate_confidence(normalized, market_type, odds)
 
     if not market_type and confidence < MIN_CONFIDENCE:
@@ -127,6 +196,8 @@ def extract_prediction(text: str) -> ExtractedPrediction | None:
         normalized_text=normalized,
         picked_team_name=extract_team_name(text, market_type),
         market_type=market_type,
+        market_side=market_side,
+        market_line=market_line,
         odds=odds,
         confidence=confidence,
         needs_review=confidence < MIN_CONFIDENCE,

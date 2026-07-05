@@ -41,6 +41,8 @@ async def ensure_sqlite_columns(connection) -> None:
             "raw_text": "TEXT",
             "normalized_text": "TEXT",
             "market_type": "VARCHAR(64)",
+            "market_side": "VARCHAR(16)",
+            "market_line": "FLOAT",
             "picked_team_name": "VARCHAR(255)",
             "odds_value": "FLOAT",
             "confidence": "FLOAT DEFAULT 0",
