@@ -69,6 +69,14 @@ async def ensure_sqlite_columns(connection) -> None:
             "raw_name": "VARCHAR(500)",
             "updated_at": "DATETIME",
         },
+        "signals": {
+            "picked_team_id": "INTEGER",
+            "odds_value": "FLOAT",
+            "model_probability_percent": "FLOAT DEFAULT 0",
+            "bookmaker_probability_percent": "FLOAT DEFAULT 0",
+            "stake_percent": "FLOAT DEFAULT 0",
+            "risk_level": "VARCHAR(32) DEFAULT 'medium'",
+        },
     }
 
     for table_name, columns in table_columns.items():
