@@ -185,5 +185,6 @@ async def auto_match_prediction(prediction_id: int) -> PredictionMatchResult:
 
 
 async def match_prediction_results() -> None:
-    """Compatibility job hook; result settlement is not implemented at this stage."""
-    return None
+    from modules.telegram_parser.result_settlement import settle_predictions
+
+    await settle_predictions()

@@ -50,6 +50,8 @@ async def ensure_sqlite_columns(connection) -> None:
             "match_confidence": "FLOAT DEFAULT 0",
             "match_reason": "VARCHAR(500)",
             "status": "VARCHAR(32) DEFAULT 'pending'",
+            "updated_at": "DATETIME",
+            "resolved_at": "DATETIME",
             "message_date": "DATETIME",
         },
         "telegram_channels": {
@@ -74,6 +76,7 @@ async def ensure_sqlite_columns(connection) -> None:
             "team_a_score": "INTEGER",
             "team_b_score": "INTEGER",
             "raw_name": "VARCHAR(500)",
+            "winner_team_id": "INTEGER",
             "updated_at": "DATETIME",
         },
         "signals": {

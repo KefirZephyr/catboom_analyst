@@ -28,4 +28,6 @@ class TelegramPrediction(Base):
     match_reason: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(32), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
     message_date: Mapped[datetime | None] = mapped_column(DateTime)
