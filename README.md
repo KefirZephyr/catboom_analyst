@@ -24,7 +24,15 @@ ADMIN_IDS=123456789
 WHITELIST_USER_IDS=123456789
 ```
 
+Поля, которые нужно заполнить вручную:
+
+- `BOT_TOKEN` - токен Telegram-бота от BotFather.
+- `API_ID` и `API_HASH` - Telegram API credentials для Telethon.
+- `PANDASCORE_TOKEN` - токен PandaScore API для матчей Dota 2.
+- `ADMIN_IDS` и `WHITELIST_USER_IDS` - Telegram ID пользователей, которым разрешён доступ.
+
 `PANDASCORE_TOKEN` нужен для загрузки матчей Dota 2. Если токен не задан, бот запустится, но раздел матчей покажет понятную ошибку при синхронизации.
+Если `API_ID` или `API_HASH` не заполнены, бот запустится, но сканирование Telegram-каналов будет недоступно до заполнения этих полей.
 
 ## Запуск
 

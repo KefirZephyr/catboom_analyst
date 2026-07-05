@@ -118,5 +118,32 @@ class Settings:
     def allowed_user_ids(self) -> set[int]:
         return set(self.admin_ids) | set(self.whitelist_user_ids)
 
+    @property
+    def BOT_TOKEN(self) -> str:
+        return self.bot_token.get_secret_value()
+
+    @property
+    def API_ID(self) -> int:
+        return self.api_id
+
+    @property
+    def API_HASH(self) -> str:
+        return self.api_hash.get_secret_value()
+
+    @property
+    def PANDASCORE_TOKEN(self) -> str:
+        return self.pandascore_token.get_secret_value()
+
+    @property
+    def DATABASE_URL(self) -> str:
+        return self.database_url
+
 
 settings = Settings()
+
+# Backward-compatible module constants for legacy imports.
+BOT_TOKEN = settings.BOT_TOKEN
+API_ID = settings.API_ID
+API_HASH = settings.API_HASH
+PANDASCORE_TOKEN = settings.PANDASCORE_TOKEN
+DATABASE_URL = settings.DATABASE_URL
