@@ -95,6 +95,13 @@ async def toggle_channel(channel_id: int) -> TelegramChannel | None:
 
 
 async def scan_channel(channel_id: int) -> ScanResult:
+    if not settings.api_id or not settings.api_hash.get_secret_value():
+        return ScanResult(
+            channel_id=channel_id,
+            username="",
+            error="Telegram API credentials не заданы. Проверьте API_ID и API_HASH в .env.",
+        )
+
     async with async_session() as session:
         channel = await session.get(TelegramChannel, channel_id)
         if not channel:
@@ -105,6 +112,15 @@ async def scan_channel(channel_id: int) -> ScanResult:
 
 
 async def scan_all_channels() -> list[ScanResult]:
+    if not settings.api_id or not settings.api_hash.get_secret_value():
+        return [
+            ScanResult(
+                channel_id=0,
+                username="",
+                error="Telegram API credentials не заданы. Проверьте API_ID и API_HASH в .env.",
+            )
+        ]
+
     channels = [channel for channel in await list_channels() if channel.is_active]
     results: list[ScanResult] = []
 

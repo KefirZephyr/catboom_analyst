@@ -21,7 +21,10 @@ class WhitelistMiddleware(BaseMiddleware):
         if allowed_ids and user and user.id not in allowed_ids:
             bot = data.get("bot")
             if bot:
-                await bot.send_message(user.id, "Доступ запрещён.")
+                await bot.send_message(
+                    user.id,
+                    "Доступ запрещён. Ваш Telegram ID не входит в ADMIN_IDS или WHITELIST_USER_IDS.",
+                )
             return None
 
         return await handler(event, data)

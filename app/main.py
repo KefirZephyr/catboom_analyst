@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 from app.bot import create_dispatcher
 from config.logging import setup_logging
 from config.settings import settings
-from db.session import init_db
+from db.session import DatabaseUnavailableError, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,14 @@ async def main() -> None:
     if settings.auto_betting_enabled:
         logger.warning("AUTO_BETTING_ENABLED is ignored in v2 foundation")
 
-    await init_db()
+    try:
+        await init_db()
+    except DatabaseUnavailableError as exc:
+        logger.error("База данных недоступна: %s", exc)
+        return
+    except Exception as exc:
+        logger.error("Не удалось инициализировать базу данных: %s", exc)
+        return
 
     bot = Bot(
         token=token,

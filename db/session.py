@@ -20,11 +20,18 @@ engine = create_async_engine(settings.database_url, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+class DatabaseUnavailableError(RuntimeError):
+    pass
+
+
 async def init_db() -> None:
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-        if settings.database_url.startswith("sqlite"):
-            await ensure_sqlite_columns(connection)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+            if settings.database_url.startswith("sqlite"):
+                await ensure_sqlite_columns(connection)
+    except Exception as exc:
+        raise DatabaseUnavailableError(str(exc)) from exc
 
 
 async def ensure_sqlite_columns(connection) -> None:
