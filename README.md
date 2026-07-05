@@ -139,3 +139,19 @@ python -m app.main
 ```
 
 В `.env` вручную нужно заполнить секретные и персональные поля: `BOT_TOKEN`, `API_ID`, `API_HASH`, `PANDASCORE_TOKEN`, `ADMIN_IDS`, `WHITELIST_USER_IDS`. Не публикуйте реальные значения этих переменных и не добавляйте `.env` в git.
+
+## Создание Pull Request одной командой
+
+Для автоматической подготовки ветки, проверок, push и создания PR нужен GitHub CLI `gh` с авторизацией:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\create_pr.ps1
+```
+
+Необязательные параметры:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\create_pr.ps1 -Branch chore/my-branch -Title "My PR title" -CommitMessage "My commit message" -BaseBranch main
+```
+
+Скрипт проверяет `.gitignore`, `.env.example`, отсутствие локальных секретов и баз в git, запускает `compileall`, импорт настроек и `pytest`, затем создаёт или обновляет PR через `gh pr create`. Merge и force push скрипт не выполняет.
