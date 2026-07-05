@@ -1,0 +1,36 @@
+# Secrets and local credentials
+.env
+!.env.example
+
+# Telegram/session files
+*.session
+*.session-journal
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# IDE/editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
