@@ -57,6 +57,13 @@ def _env_str_list(name: str, default: str = "") -> list[str]:
     return [item.strip().lstrip("@") for item in _env(name, default).split(",") if item.strip()]
 
 
+def _database_url() -> str:
+    value = _env("DATABASE_URL", "sqlite+aiosqlite:///./catboom_analyst.db")
+    if value.startswith("sqlite:///"):
+        return value.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: SecretValue = field(default_factory=lambda: SecretValue(_env("BOT_TOKEN")))
@@ -66,9 +73,7 @@ class Settings:
         default_factory=lambda: SecretValue(_env("PANDASCORE_TOKEN"))
     )
 
-    database_url: str = field(
-        default_factory=lambda: _env("DATABASE_URL", "sqlite+aiosqlite:///./catboom_analyst.db")
-    )
+    database_url: str = field(default_factory=_database_url)
 
     admin_ids: list[int] = field(default_factory=lambda: _env_int_list("ADMIN_IDS"))
     whitelist_user_ids: list[int] = field(
@@ -99,6 +104,9 @@ class Settings:
         )
     )
     default_history_days: int = field(default_factory=lambda: _env_int("DEFAULT_HISTORY_DAYS", 30))
+    telegram_history_message_limit: int = field(
+        default_factory=lambda: _env_int("TELEGRAM_HISTORY_MESSAGE_LIMIT", 500)
+    )
 
     @property
     def allowed_user_ids(self) -> set[int]:

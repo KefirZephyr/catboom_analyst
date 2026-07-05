@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
@@ -31,6 +32,11 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dispatcher = create_dispatcher()
+
+    if os.getenv("CATBOOM_DRY_RUN") == "1":
+        logger.info("CatBoom Dota Analyst v2 dry run completed")
+        await bot.session.close()
+        return
 
     logger.info("CatBoom Dota Analyst v2 started")
     try:

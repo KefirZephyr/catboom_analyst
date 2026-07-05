@@ -14,5 +14,6 @@ class TelegramChannel(Base):
     title: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     rating: Mapped[float] = mapped_column(default=0)
+    last_error: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
