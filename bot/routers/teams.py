@@ -5,7 +5,7 @@ from sqlalchemy import or_, select
 from bot.routers.matches import format_match_card, hydrate_match
 from db.models import DotaMatch, Player, Team
 from db.session import async_session
-from modules.analytics.match_analytics import calculate_team_form, calculate_tournament_form
+from modules.analytics.match_analytics import calculate_team_form, calculate_tournament_form, format_streak
 
 router = Router()
 
@@ -87,9 +87,13 @@ async def format_team_card(team_id: int) -> str | None:
     lines = [
         f"👥 <b>{team.name}</b>",
         f"Тег: {team.acronym or 'не указан'}",
-        f"Форма 5 матчей: {form5.wins}/{form5.matches} ({form5.winrate:.1f}%)",
-        f"Форма 10 матчей: {form10.wins}/{form10.matches} ({form10.winrate:.1f}%)",
-        f"Текущий турнир: {tournament_form.wins}/{tournament_form.matches} ({tournament_form.winrate:.1f}%)",
+        "",
+        "<b>Форма</b>",
+        f"Последние 5: {form5.wins}-{form5.losses} ({form5.winrate:.1f}%)",
+        f"Последние 10: {form10.wins}-{form10.losses} ({form10.winrate:.1f}%)",
+        f"Серия: {format_streak(form5)}",
+        f"Среднее выигранных карт: {format_avg_maps(form10.avg_maps_won)}",
+        f"Текущий турнир: {tournament_form.wins}-{tournament_form.losses} ({tournament_form.winrate:.1f}%)",
         "",
         "<b>Игроки</b>",
     ]
@@ -98,3 +102,7 @@ async def format_team_card(team_id: int) -> str | None:
     lines.append("<b>Последние матчи</b>")
     lines.extend(format_match_card(*row) for row in matches[:5]) if matches else lines.append("Матчи не найдены.")
     return "\n\n".join(lines)
+
+
+def format_avg_maps(value: float | None) -> str:
+    return f"{value:.2f}" if value is not None else "нет данных"
