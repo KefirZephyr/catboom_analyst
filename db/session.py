@@ -8,6 +8,7 @@ from db.models import (
     DotaMatch,
     Odds,
     Signal,
+    Player,
     Team,
     TeamAlias,
     TelegramChannel,
@@ -88,6 +89,20 @@ async def ensure_sqlite_columns(connection) -> None:
             "bookmaker_probability_percent": "FLOAT DEFAULT 0",
             "stake_percent": "FLOAT DEFAULT 0",
             "risk_level": "VARCHAR(32) DEFAULT 'medium'",
+        },
+        "players": {
+            "external_id": "VARCHAR(128)",
+            "team_id": "INTEGER",
+            "nickname": "VARCHAR(255)",
+            "first_name": "VARCHAR(255)",
+            "last_name": "VARCHAR(255)",
+            "slug": "VARCHAR(255)",
+            "role": "VARCHAR(64)",
+            "nationality": "VARCHAR(64)",
+            "image_url": "VARCHAR(500)",
+            "is_active": "BOOLEAN DEFAULT 1",
+            "created_at": "DATETIME",
+            "updated_at": "DATETIME",
         },
     }
 
