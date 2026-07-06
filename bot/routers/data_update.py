@@ -41,8 +41,12 @@ async def data_update_run(callback: CallbackQuery) -> None:
             f"Новые команды: {result.teams}\n"
             f"Новые турниры: {result.tournaments}\n"
             f"Новые матчи: {result.matches}\n"
-            f"Новые игроки: {result.players}"
+            f"Игроки обработано: {result.players_processed}\n"
+            f"Новые игроки: {result.players_created}\n"
+            f"Обновлено игроков: {result.players_updated}"
         )
+        if result.players_processed == 0 and result.players_reason:
+            text += f"\n\nИгроки: {result.players_reason}"
 
     await callback.message.edit_text(text, reply_markup=data_update_keyboard())
     await callback.answer()

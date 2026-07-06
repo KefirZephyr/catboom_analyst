@@ -34,7 +34,13 @@ class PandaScoreProvider:
     async def get_past_matches(self) -> list[dict[str, Any]]:
         return await self._get("/dota2/matches/past")
 
-    async def _get(self, path: str) -> list[dict[str, Any]]:
+    async def get_team(self, team_id: str) -> dict[str, Any]:
+        data = await self._get(f"/dota2/teams/{team_id}", expect_list=False)
+        if not isinstance(data, dict):
+            raise PandaScoreError("PandaScore API вернул неожиданный формат данных команды")
+        return data
+
+    async def _get(self, path: str, expect_list: bool = True) -> list[dict[str, Any]] | dict[str, Any]:
         if not self.token:
             raise PandaScoreTokenMissing("PANDASCORE_TOKEN не задан")
 
@@ -58,7 +64,7 @@ class PandaScoreProvider:
             logger.warning("PandaScore API request failed for %s: %s", path, type(exc).__name__)
             raise PandaScoreError("Не удалось подключиться к PandaScore API") from exc
 
-        if not isinstance(data, list):
+        if expect_list and not isinstance(data, list):
             logger.warning("PandaScore API returned unexpected payload for %s", path)
             raise PandaScoreError("PandaScore API вернул неожиданный формат данных")
 

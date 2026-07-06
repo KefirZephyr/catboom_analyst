@@ -7,6 +7,12 @@ from db.session import async_session
 
 router = Router()
 
+PLAYERS_EMPTY_TEXT = (
+    "Игроки пока не загружены. Нажмите 🔄 Обновить данные или откройте команду, "
+    "чтобы попробовать загрузить состав. Если PandaScore не отдаёт составы по вашему тарифу/API, "
+    "бот покажет только команды и матчи."
+)
+
 
 def players_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -35,7 +41,7 @@ async def players_list(callback: CallbackQuery) -> None:
 
     if not players:
         await callback.message.edit_text(
-            "Игроки пока не загружены. PandaScore не всегда отдаёт составы в ответах матчей.",
+            PLAYERS_EMPTY_TEXT,
             reply_markup=players_keyboard(),
         )
         await callback.answer()
@@ -60,13 +66,22 @@ async def player_view(callback: CallbackQuery) -> None:
             return
         team = await session.get(Team, player.team_id) if player.team_id else None
 
-    text = (
-        f"🎮 <b>{player.nickname}</b>\n\n"
-        f"Имя: {' '.join(part for part in [player.first_name, player.last_name] if part) or 'нет данных'}\n"
-        f"Команда: {team.name if team else 'нет данных'}\n"
-        f"Роль: {player.role or 'нет данных'}\n"
-        f"Страна: {player.nationality or 'нет данных'}\n\n"
-        "Статистика игрока не выдумывается: показываются только поля, доступные из API."
-    )
+    text = format_player_card(player, team)
     await callback.message.edit_text(text, reply_markup=players_keyboard())
     await callback.answer()
+
+
+def format_player_card(player: Player, team: Team | None) -> str:
+    full_name = " ".join(part for part in [player.first_name, player.last_name] if part) or "нет данных"
+    updated_at = player.updated_at.strftime("%d.%m.%Y %H:%M") if player.updated_at else "нет данных"
+    status = "активен" if player.is_active else "неактивен"
+    return (
+        f"🎮 <b>{player.nickname}</b>\n\n"
+        f"Имя: {full_name}\n"
+        f"Команда: {team.name if team else 'нет данных'}\n"
+        f"Роль/позиция: {player.role or 'нет данных'}\n"
+        f"Страна: {player.nationality or 'нет данных'}\n"
+        f"Статус: {status}\n"
+        f"Обновлено: {updated_at}\n\n"
+        "Статистика игрока не выдумывается: показываются только поля, доступные из API."
+    )
