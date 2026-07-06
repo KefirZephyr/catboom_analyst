@@ -16,6 +16,13 @@ class PandaScoreTokenMissing(PandaScoreError):
     pass
 
 
+class PandaScoreNotFound(PandaScoreError):
+    pass
+
+
+TEAM_DETAIL_NOT_FOUND_CACHE: set[str] = set()
+
+
 class PandaScoreProvider:
     def __init__(self) -> None:
         self.base_url = settings.pandascore_base_url.rstrip("/")
@@ -35,7 +42,15 @@ class PandaScoreProvider:
         return await self._get("/dota2/matches/past")
 
     async def get_team(self, team_id: str) -> dict[str, Any]:
-        data = await self._get(f"/dota2/teams/{team_id}", expect_list=False)
+        if team_id in TEAM_DETAIL_NOT_FOUND_CACHE:
+            raise PandaScoreNotFound(f"PandaScore team details недоступны для team_id={team_id}")
+
+        try:
+            data = await self._get(f"/teams/{team_id}", expect_list=False)
+        except PandaScoreNotFound:
+            TEAM_DETAIL_NOT_FOUND_CACHE.add(team_id)
+            raise
+
         if not isinstance(data, dict):
             raise PandaScoreError("PandaScore API вернул неожиданный формат данных команды")
         return data
@@ -59,6 +74,8 @@ class PandaScoreProvider:
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             logger.warning("PandaScore API returned HTTP %s for %s", status, path)
+            if status == 404:
+                raise PandaScoreNotFound(f"PandaScore API вернул HTTP 404 для {path}") from exc
             raise PandaScoreError(f"PandaScore API вернул HTTP {status}") from exc
         except httpx.HTTPError as exc:
             logger.warning("PandaScore API request failed for %s: %s", path, type(exc).__name__)
