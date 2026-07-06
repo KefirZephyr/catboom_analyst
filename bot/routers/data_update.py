@@ -1,7 +1,7 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
-from modules.dota_data.match_sync import sync_matches
+from modules.dota_data.match_sync import MatchSyncResult, sync_matches
 
 router = Router()
 
@@ -27,26 +27,29 @@ async def data_update_menu(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "data_update_run")
 async def data_update_run(callback: CallbackQuery) -> None:
+    await callback.answer("Обновляю данные...")
     await callback.message.edit_text("🔄 Обновляю данные PandaScore...", reply_markup=data_update_keyboard())
     result = await sync_matches()
+    await callback.message.edit_text(format_data_update_report(result), reply_markup=data_update_keyboard())
 
+
+def format_data_update_report(result: MatchSyncResult) -> str:
     if result.error:
-        text = f"⚠️ <b>Обновление не выполнено</b>\n\n{result.error}"
-    else:
-        text = (
-            "✅ <b>Данные обновлены</b>\n\n"
-            f"Будущие матчи: {result.upcoming}\n"
-            f"Live: {result.live}\n"
-            f"Завершённые: {result.past}\n"
-            f"Новые команды: {result.teams}\n"
-            f"Новые турниры: {result.tournaments}\n"
-            f"Новые матчи: {result.matches}\n"
-            f"Игроки обработано: {result.players_processed}\n"
-            f"Новые игроки: {result.players_created}\n"
-            f"Обновлено игроков: {result.players_updated}"
-        )
-        if result.players_processed == 0 and result.players_reason:
-            text += f"\n\nИгроки: {result.players_reason}"
+        return f"⚠️ <b>Обновление не выполнено</b>\n\n{result.error}"
 
-    await callback.message.edit_text(text, reply_markup=data_update_keyboard())
-    await callback.answer()
+    text = (
+        "✅ <b>Данные обновлены</b>\n\n"
+        f"Матчи обработано: {result.matches_processed}\n"
+        f"Матчи создано: {result.matches_created}\n"
+        f"Матчи обновлено: {result.matches_updated}\n"
+        f"Команды создано: {result.teams_created}\n"
+        f"Команды обновлено: {result.teams_updated}\n"
+        f"Турниры создано: {result.tournaments_created}\n"
+        f"Турниры обновлено: {result.tournaments_updated}\n"
+        f"Игроки создано: {result.players_created}\n"
+        f"Игроки обновлено: {result.players_updated}\n"
+        f"Player sync skipped: {result.players_skipped}"
+    )
+    if result.players_reason:
+        text += f"\n\nИгроки: {result.players_reason}"
+    return text

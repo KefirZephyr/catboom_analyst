@@ -8,6 +8,7 @@ from db.models import DotaMatch, Player, Team, TeamAlias, Tournament
 from db.session import async_session
 from modules.dota_data.providers.pandascore import (
     PandaScoreError,
+    PandaScoreNotFound,
     PandaScoreProvider,
     PandaScoreTokenMissing,
 )
@@ -18,6 +19,7 @@ class PlayerSyncStats:
     processed: int = 0
     created: int = 0
     updated: int = 0
+    skipped: int = 0
     reason: str | None = None
 
 
@@ -26,13 +28,21 @@ class MatchSyncResult:
     upcoming: int = 0
     live: int = 0
     past: int = 0
+    matches_processed: int = 0
+    matches_created: int = 0
+    matches_updated: int = 0
     teams: int = 0
+    teams_created: int = 0
+    teams_updated: int = 0
     tournaments: int = 0
+    tournaments_created: int = 0
+    tournaments_updated: int = 0
     matches: int = 0
     players: int = 0
     players_processed: int = 0
     players_created: int = 0
     players_updated: int = 0
+    players_skipped: int = 0
     players_reason: str | None = None
     error: str | None = None
 
@@ -60,6 +70,7 @@ def build_player_sync_stats(counters: dict[str, Any]) -> PlayerSyncStats:
         processed=processed,
         created=int(counters.get("players_created", 0)),
         updated=int(counters.get("players_updated", 0)),
+        skipped=int(counters.get("players_skipped", 0)),
         reason=reason,
     )
 
@@ -67,11 +78,16 @@ def build_player_sync_stats(counters: dict[str, Any]) -> PlayerSyncStats:
 def empty_counters() -> dict[str, Any]:
     return {
         "teams": 0,
+        "teams_updated": 0,
         "tournaments": 0,
+        "tournaments_updated": 0,
         "matches": 0,
+        "matches_processed": 0,
+        "matches_updated": 0,
         "players_processed": 0,
         "players_created": 0,
         "players_updated": 0,
+        "players_skipped": 0,
         "player_payloads_seen": 0,
         "team_external_ids": set(),
         "players_reason": None,
@@ -111,12 +127,20 @@ async def sync_matches() -> MatchSyncResult:
         live=len(live),
         past=len(past),
         teams=counters["teams"],
+        teams_created=counters["teams"],
+        teams_updated=counters["teams_updated"],
         tournaments=counters["tournaments"],
+        tournaments_created=counters["tournaments"],
+        tournaments_updated=counters["tournaments_updated"],
         matches=counters["matches"],
+        matches_processed=counters["matches_processed"],
+        matches_created=counters["matches"],
+        matches_updated=counters["matches_updated"],
         players=player_stats.created,
         players_processed=player_stats.processed,
         players_created=player_stats.created,
         players_updated=player_stats.updated,
+        players_skipped=counters["players_skipped"],
         players_reason=player_stats.reason,
     )
 
@@ -153,9 +177,24 @@ async def sync_team_details_for_players(
         return
 
     errors = []
-    for team_external_id in sorted(team_ids):
+    not_found_count = 0
+    team_ids_list = sorted(team_ids)
+    for index, team_external_id in enumerate(team_ids_list):
         try:
             team_payload = await provider.get_team(team_external_id)
+        except PandaScoreNotFound as exc:
+            not_found_count += 1
+            counters["players_skipped"] += 1
+            errors.append(str(exc))
+            if not_found_count >= 3:
+                remaining = max(len(team_ids_list) - index - 1, 0)
+                counters["players_skipped"] += remaining
+                counters["players_reason"] = (
+                    "PandaScore team details endpoint вернул несколько 404 подряд. "
+                    "Загрузка составов остановлена, чтобы не повторять недоступные запросы."
+                )
+                return
+            continue
         except PandaScoreError as exc:
             errors.append(str(exc))
             continue
@@ -191,6 +230,8 @@ async def upsert_team(session, team_data: dict[str, Any] | None, counters: dict[
         team = Team(external_id=team_external_id, name=team_data.get("name") or "Unknown")
         session.add(team)
         counters["teams"] += 1
+    else:
+        counters["teams_updated"] += 1
 
     team.name = team_data.get("name") or team.name
     team.slug = team_data.get("slug") or team.slug
@@ -316,7 +357,7 @@ async def upsert_team_aliases(session, team: Team, aliases: list[str | None]) ->
 async def upsert_tournament(
     session,
     match_data: dict[str, Any],
-    counters: dict[str, int],
+    counters: dict[str, Any],
 ) -> Tournament | None:
     tournament_data = match_data.get("tournament") or {}
     serie_data = match_data.get("serie") or {}
@@ -337,6 +378,8 @@ async def upsert_tournament(
         )
         session.add(tournament)
         counters["tournaments"] += 1
+    else:
+        counters["tournaments_updated"] += 1
 
     tournament.name = tournament_data.get("name") or serie_data.get("full_name") or tournament.name
     tournament.league_name = league_data.get("name") or tournament.league_name
@@ -350,8 +393,9 @@ async def upsert_match(
     session,
     match_data: dict[str, Any],
     status_group: str,
-    counters: dict[str, int],
+    counters: dict[str, Any],
 ) -> DotaMatch | None:
+    counters["matches_processed"] += 1
     match_external_id = external_id(match_data.get("id"))
     if not match_external_id:
         return None
@@ -381,6 +425,8 @@ async def upsert_match(
         match = DotaMatch(external_id=match_external_id)
         session.add(match)
         counters["matches"] += 1
+    else:
+        counters["matches_updated"] += 1
 
     results = match_data.get("results") or []
     scores = {external_id(item.get("team_id")): item.get("score") for item in results}
