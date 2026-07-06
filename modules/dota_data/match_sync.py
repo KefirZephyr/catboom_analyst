@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from db.models import DotaMatch, Team, TeamAlias, Tournament
+from db.models import DotaMatch, Player, Team, TeamAlias, Tournament
 from db.session import async_session
 from modules.dota_data.providers.pandascore import (
     PandaScoreError,
@@ -21,6 +21,7 @@ class MatchSyncResult:
     teams: int = 0
     tournaments: int = 0
     matches: int = 0
+    players: int = 0
     error: str | None = None
 
 
@@ -52,7 +53,7 @@ async def sync_matches() -> MatchSyncResult:
     except PandaScoreError as exc:
         return MatchSyncResult(error=str(exc))
 
-    counters = {"teams": 0, "tournaments": 0, "matches": 0}
+    counters = {"teams": 0, "tournaments": 0, "matches": 0, "players": 0}
     async with async_session() as session:
         for status_group, payload in (
             ("upcoming", upcoming),
@@ -71,6 +72,7 @@ async def sync_matches() -> MatchSyncResult:
         teams=counters["teams"],
         tournaments=counters["tournaments"],
         matches=counters["matches"],
+        players=counters["players"],
     )
 
 
@@ -95,7 +97,65 @@ async def upsert_team(session, team_data: dict[str, Any] | None, counters: dict[
     team.image_url = team_data.get("image_url") or team.image_url
     team.updated_at = datetime.utcnow()
     await upsert_team_aliases(session, team, [team.name, team.slug, team.acronym])
+    await upsert_team_players(session, team, team_data, counters)
     return team
+
+
+def extract_player_items(team_data: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not team_data:
+        return []
+
+    candidates = []
+    for key in ("players", "current_videogame_roster", "current_roster"):
+        value = team_data.get(key)
+        if isinstance(value, list):
+            candidates.extend(item for item in value if isinstance(item, dict))
+
+    roster = team_data.get("roster")
+    if isinstance(roster, dict):
+        players = roster.get("players")
+        if isinstance(players, list):
+            candidates.extend(item for item in players if isinstance(item, dict))
+
+    return candidates
+
+
+async def upsert_team_players(
+    session,
+    team: Team,
+    team_data: dict[str, Any] | None,
+    counters: dict[str, int],
+) -> None:
+    await session.flush()
+    for raw_player in extract_player_items(team_data):
+        player_data = raw_player.get("player") if isinstance(raw_player.get("player"), dict) else raw_player
+        player_external_id = external_id(player_data.get("id"))
+        nickname = (
+            player_data.get("name")
+            or player_data.get("nickname")
+            or player_data.get("first_name")
+            or "Unknown"
+        )
+        if not player_external_id and nickname == "Unknown":
+            continue
+
+        result = await session.execute(select(Player).where(Player.external_id == player_external_id))
+        player = result.scalar_one_or_none() if player_external_id else None
+        if not player:
+            player = Player(external_id=player_external_id, nickname=nickname)
+            session.add(player)
+            counters["players"] += 1
+
+        player.team_id = team.id
+        player.nickname = nickname
+        player.first_name = player_data.get("first_name") or player.first_name
+        player.last_name = player_data.get("last_name") or player.last_name
+        player.slug = player_data.get("slug") or player.slug
+        player.role = raw_player.get("role") or player_data.get("role") or player.role
+        player.nationality = player_data.get("nationality") or player.nationality
+        player.image_url = player_data.get("image_url") or player.image_url
+        player.is_active = True
+        player.updated_at = datetime.utcnow()
 
 
 async def upsert_team_aliases(session, team: Team, aliases: list[str | None]) -> None:
@@ -161,14 +221,19 @@ async def upsert_match(
         return None
 
     opponents = match_data.get("opponents") or []
+    opponent_a = opponents[0] if len(opponents) > 0 else {}
+    opponent_b = opponents[1] if len(opponents) > 1 else {}
+    team_a_payload = opponent_a.get("opponent") if isinstance(opponent_a, dict) else None
+    team_b_payload = opponent_b.get("opponent") if isinstance(opponent_b, dict) else None
+
     team_a = await upsert_team(
         session,
-        opponents[0].get("opponent") if len(opponents) > 0 else None,
+        team_a_payload,
         counters,
     )
     team_b = await upsert_team(
         session,
-        opponents[1].get("opponent") if len(opponents) > 1 else None,
+        team_b_payload,
         counters,
     )
     tournament = await upsert_tournament(session, match_data, counters)

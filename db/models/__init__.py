@@ -2,6 +2,7 @@ from db.models.bankroll import BankrollSettings
 from db.models.bet_orders import BetOrder
 from db.models.matches import DotaMatch
 from db.models.odds import Odds
+from db.models.players import Player
 from db.models.signals import Signal
 from db.models.teams import Team
 from db.models.team_aliases import TeamAlias
@@ -15,6 +16,7 @@ __all__ = [
     "BetOrder",
     "DotaMatch",
     "Odds",
+    "Player",
     "Signal",
     "Team",
     "TeamAlias",

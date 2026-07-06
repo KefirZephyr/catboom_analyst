@@ -4,7 +4,16 @@ from typing import Any
 from aiogram import BaseMiddleware, Dispatcher
 from aiogram.types import TelegramObject, User as TelegramUser
 
-from bot.routers import bankroll, channels, matches, menu, settings as settings_router, signals
+from bot.routers import (
+    data_update,
+    matches,
+    menu,
+    players,
+    predictions,
+    settings as settings_router,
+    teams,
+    tournaments,
+)
 from config.settings import settings
 
 
@@ -35,9 +44,11 @@ def create_dispatcher() -> Dispatcher:
     dispatcher.update.middleware(WhitelistMiddleware())
 
     dispatcher.include_router(menu.router)
+    dispatcher.include_router(tournaments.router)
     dispatcher.include_router(matches.router)
-    dispatcher.include_router(channels.router)
-    dispatcher.include_router(signals.router)
-    dispatcher.include_router(bankroll.router)
+    dispatcher.include_router(teams.router)
+    dispatcher.include_router(players.router)
+    dispatcher.include_router(predictions.router)
+    dispatcher.include_router(data_update.router)
     dispatcher.include_router(settings_router.router)
     return dispatcher
