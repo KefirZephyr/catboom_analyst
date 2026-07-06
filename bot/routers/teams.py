@@ -6,6 +6,7 @@ from bot.routers.matches import format_match_card, hydrate_match
 from db.models import DotaMatch, Player, Team
 from db.session import async_session
 from modules.analytics.match_analytics import calculate_team_form, calculate_tournament_form, format_streak
+from modules.dota_data.match_sync import sync_team_players_by_external_id
 
 router = Router()
 
@@ -79,6 +80,14 @@ async def format_team_card(team_id: int) -> str | None:
         )
         players = list(players_result.scalars().all())
 
+    if not players and team.external_id:
+        await sync_team_players_by_external_id(team.external_id)
+        async with async_session() as session:
+            players_result = await session.execute(
+                select(Player).where(Player.team_id == team_id, Player.is_active == True).order_by(Player.nickname).limit(10)
+            )
+            players = list(players_result.scalars().all())
+
     form5 = await calculate_team_form(team_id, limit=5)
     form10 = await calculate_team_form(team_id, limit=10)
     current_tournament_id = matches[0][0].tournament_id if matches else None
@@ -97,7 +106,10 @@ async def format_team_card(team_id: int) -> str | None:
         "",
         "<b>Игроки</b>",
     ]
-    lines.extend(f"• {player.nickname}" for player in players) if players else lines.append("Нет данных о составе.")
+    if players:
+        lines.extend(f"• {player.nickname}" for player in players)
+    else:
+        lines.append("Состав пока не загружен.")
     lines.append("")
     lines.append("<b>Последние матчи</b>")
     lines.extend(format_match_card(*row) for row in matches[:5]) if matches else lines.append("Матчи не найдены.")

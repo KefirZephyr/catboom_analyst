@@ -14,6 +14,14 @@ from modules.dota_data.providers.pandascore import (
 
 
 @dataclass(frozen=True)
+class PlayerSyncStats:
+    processed: int = 0
+    created: int = 0
+    updated: int = 0
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class MatchSyncResult:
     upcoming: int = 0
     live: int = 0
@@ -22,6 +30,10 @@ class MatchSyncResult:
     tournaments: int = 0
     matches: int = 0
     players: int = 0
+    players_processed: int = 0
+    players_created: int = 0
+    players_updated: int = 0
+    players_reason: str | None = None
     error: str | None = None
 
 
@@ -39,6 +51,33 @@ def external_id(value: Any) -> str | None:
     return str(value) if value is not None else None
 
 
+def build_player_sync_stats(counters: dict[str, Any]) -> PlayerSyncStats:
+    processed = int(counters.get("players_processed", 0))
+    reason = counters.get("players_reason")
+    if processed == 0 and not reason:
+        reason = "PandaScore не вернул составы в ответах матчей или деталях команд."
+    return PlayerSyncStats(
+        processed=processed,
+        created=int(counters.get("players_created", 0)),
+        updated=int(counters.get("players_updated", 0)),
+        reason=reason,
+    )
+
+
+def empty_counters() -> dict[str, Any]:
+    return {
+        "teams": 0,
+        "tournaments": 0,
+        "matches": 0,
+        "players_processed": 0,
+        "players_created": 0,
+        "players_updated": 0,
+        "player_payloads_seen": 0,
+        "team_external_ids": set(),
+        "players_reason": None,
+    }
+
+
 async def sync_matches() -> MatchSyncResult:
     provider = PandaScoreProvider()
     if not provider.is_configured:
@@ -53,7 +92,7 @@ async def sync_matches() -> MatchSyncResult:
     except PandaScoreError as exc:
         return MatchSyncResult(error=str(exc))
 
-    counters = {"teams": 0, "tournaments": 0, "matches": 0, "players": 0}
+    counters = empty_counters()
     async with async_session() as session:
         for status_group, payload in (
             ("upcoming", upcoming),
@@ -63,8 +102,10 @@ async def sync_matches() -> MatchSyncResult:
             for item in payload:
                 await upsert_match(session, item, status_group, counters)
 
+        await sync_team_details_for_players(session, provider, counters)
         await session.commit()
 
+    player_stats = build_player_sync_stats(counters)
     return MatchSyncResult(
         upcoming=len(upcoming),
         live=len(live),
@@ -72,17 +113,77 @@ async def sync_matches() -> MatchSyncResult:
         teams=counters["teams"],
         tournaments=counters["tournaments"],
         matches=counters["matches"],
-        players=counters["players"],
+        players=player_stats.created,
+        players_processed=player_stats.processed,
+        players_created=player_stats.created,
+        players_updated=player_stats.updated,
+        players_reason=player_stats.reason,
     )
 
 
-async def upsert_team(session, team_data: dict[str, Any] | None, counters: dict[str, int]) -> Team | None:
+async def sync_team_players_by_external_id(team_external_id: str | None) -> PlayerSyncStats:
+    if not team_external_id:
+        return PlayerSyncStats(reason="У команды нет PandaScore ID для загрузки состава.")
+
+    provider = PandaScoreProvider()
+    if not provider.is_configured:
+        return PlayerSyncStats(reason="PANDASCORE_TOKEN не задан. Добавьте токен в .env.")
+
+    counters = empty_counters()
+    try:
+        team_payload = await provider.get_team(team_external_id)
+    except PandaScoreError as exc:
+        return PlayerSyncStats(reason=f"PandaScore не отдал состав команды: {exc}")
+
+    async with async_session() as session:
+        await upsert_team(session, team_payload, counters)
+        await session.commit()
+
+    return build_player_sync_stats(counters)
+
+
+async def sync_team_details_for_players(
+    session,
+    provider: PandaScoreProvider,
+    counters: dict[str, Any],
+) -> None:
+    team_ids = counters.get("team_external_ids")
+    if not isinstance(team_ids, set) or not team_ids:
+        counters["players_reason"] = "В ответах матчей не было команд, по которым можно запросить составы."
+        return
+
+    errors = []
+    for team_external_id in sorted(team_ids):
+        try:
+            team_payload = await provider.get_team(team_external_id)
+        except PandaScoreError as exc:
+            errors.append(str(exc))
+            continue
+        await upsert_team(session, team_payload, counters)
+
+    if counters.get("players_processed", 0):
+        counters["players_reason"] = None
+    elif errors:
+        counters["players_reason"] = (
+            "PandaScore не отдал составы через endpoint команды. "
+            f"Последняя ошибка: {errors[-1]}"
+        )
+    elif counters.get("player_payloads_seen", 0):
+        counters["players_reason"] = "PandaScore вернул составы без достаточных данных игрока: id и имени."
+    else:
+        counters["players_reason"] = "PandaScore не вернул составы в ответах матчей или деталях команд."
+
+
+async def upsert_team(session, team_data: dict[str, Any] | None, counters: dict[str, Any]) -> Team | None:
     if not team_data:
         return None
 
     team_external_id = external_id(team_data.get("id"))
     if not team_external_id:
         return None
+    team_ids = counters.get("team_external_ids")
+    if isinstance(team_ids, set):
+        team_ids.add(team_external_id)
 
     result = await session.execute(select(Team).where(Team.external_id == team_external_id))
     team = result.scalar_one_or_none()
@@ -120,41 +221,76 @@ def extract_player_items(team_data: dict[str, Any] | None) -> list[dict[str, Any
     return candidates
 
 
+def normalize_player_payload(raw_player: dict[str, Any]) -> dict[str, Any] | None:
+    player_data = raw_player.get("player") if isinstance(raw_player.get("player"), dict) else raw_player
+    player_external_id = external_id(player_data.get("id"))
+    nickname = (
+        player_data.get("name")
+        or player_data.get("nickname")
+        or player_data.get("display_name")
+        or " ".join(
+            part
+            for part in [player_data.get("first_name"), player_data.get("last_name")]
+            if part
+        ).strip()
+        or player_data.get("slug")
+    )
+    if not player_external_id or not nickname:
+        return None
+
+    active_value = raw_player.get("active")
+    if active_value is None:
+        active_value = raw_player.get("is_active")
+    if active_value is None:
+        active_value = player_data.get("active")
+    if active_value is None:
+        active_value = player_data.get("is_active")
+
+    return {
+        "external_id": player_external_id,
+        "nickname": nickname,
+        "first_name": player_data.get("first_name"),
+        "last_name": player_data.get("last_name"),
+        "slug": player_data.get("slug"),
+        "role": raw_player.get("role") or raw_player.get("position") or player_data.get("role") or player_data.get("position"),
+        "nationality": player_data.get("nationality") or player_data.get("country"),
+        "image_url": player_data.get("image_url"),
+        "is_active": bool(active_value) if active_value is not None else True,
+    }
+
+
 async def upsert_team_players(
     session,
     team: Team,
     team_data: dict[str, Any] | None,
-    counters: dict[str, int],
+    counters: dict[str, Any],
 ) -> None:
     await session.flush()
     for raw_player in extract_player_items(team_data):
-        player_data = raw_player.get("player") if isinstance(raw_player.get("player"), dict) else raw_player
-        player_external_id = external_id(player_data.get("id"))
-        nickname = (
-            player_data.get("name")
-            or player_data.get("nickname")
-            or player_data.get("first_name")
-            or "Unknown"
-        )
-        if not player_external_id and nickname == "Unknown":
+        counters["player_payloads_seen"] += 1
+        player_data = normalize_player_payload(raw_player)
+        if not player_data:
             continue
 
-        result = await session.execute(select(Player).where(Player.external_id == player_external_id))
-        player = result.scalar_one_or_none() if player_external_id else None
+        counters["players_processed"] += 1
+        result = await session.execute(select(Player).where(Player.external_id == player_data["external_id"]))
+        player = result.scalar_one_or_none()
         if not player:
-            player = Player(external_id=player_external_id, nickname=nickname)
+            player = Player(external_id=player_data["external_id"], nickname=player_data["nickname"])
             session.add(player)
-            counters["players"] += 1
+            counters["players_created"] += 1
+        else:
+            counters["players_updated"] += 1
 
         player.team_id = team.id
-        player.nickname = nickname
-        player.first_name = player_data.get("first_name") or player.first_name
-        player.last_name = player_data.get("last_name") or player.last_name
-        player.slug = player_data.get("slug") or player.slug
-        player.role = raw_player.get("role") or player_data.get("role") or player.role
-        player.nationality = player_data.get("nationality") or player.nationality
-        player.image_url = player_data.get("image_url") or player.image_url
-        player.is_active = True
+        player.nickname = player_data["nickname"]
+        player.first_name = player_data["first_name"] or player.first_name
+        player.last_name = player_data["last_name"] or player.last_name
+        player.slug = player_data["slug"] or player.slug
+        player.role = player_data["role"] or player.role
+        player.nationality = player_data["nationality"] or player.nationality
+        player.image_url = player_data["image_url"] or player.image_url
+        player.is_active = player_data["is_active"]
         player.updated_at = datetime.utcnow()
 
 
